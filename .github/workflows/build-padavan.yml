@@ -38,7 +38,7 @@ jobs:
         mkdir -p /opt/images/
     - name: Build Firmware
       env:
-        TNAME: K2P
+        TNAME: NETGEAR-BZV
       run: |
         cd /opt/rt-n56u/trunk
         if [ ! -f configs/templates/$TNAME.config ] ; then
@@ -96,7 +96,7 @@ jobs:
         sudo ./clear_tree
         sudo ./build_firmware_modify $TNAME 0
         sudo mv -f images/*.trx /opt/images/
-    - name : Upload packages
+    - name : NETGEAR-BZV
       uses: actions/upload-artifact@master
       if: always()
       with:
