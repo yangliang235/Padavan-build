@@ -96,9 +96,9 @@ jobs:
         sudo ./clear_tree
         sudo ./build_firmware_modify $TNAME 0
         sudo mv -f images/*.trx /opt/images/
-    - name : k2p
+    - name : Update build-padavan.yml
       uses: actions/upload-artifact@master
       if: always()
       with:
-        name: Padavan-packages
+        name: k2p
         path: /opt/images
