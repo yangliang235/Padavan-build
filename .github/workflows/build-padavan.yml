@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
@@ -111,27 +111,26 @@ jobs:
         echo "CONFIG_FIRMWARE_WIFI_DRIVER=5.0.4.0" >> .config
         echo "CONFIG_FIRMWARE_KERNEL_CONFIG=\"kernel-3.4.x-5.0.config\"" >> .config
 
-        # SmartDNS（你的模板截图中未显式列出，但如需请开启）
+        # SmartDNS
         echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=y" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNSBIN=y" >> .config
 
         # 中文
         echo "CONFIG_FIRMWARE_INCLUDE_LANG_CN=y" >> .config
 
-        # USB 与文件系统（你的模板已开启大部分）
+        # USB 与文件系统
         echo "CONFIG_FIRMWARE_ENABLE_USB=y" >> .config
         echo "CONFIG_FIRMWARE_ENABLE_UFSD=y" >> .config
         echo "CONFIG_FIRMWARE_ENABLE_FAT=y" >> .config
         echo "CONFIG_FIRMWARE_ENABLE_EXT4=y" >> .config
 
-        # Samba / FTP / 打印（按你的模板保留）
+        # Samba / FTP / 打印
         echo "CONFIG_FIRMWARE_INCLUDE_SMBD36=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_FTPD=n" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_LPRD=y" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_U2EC=y" >> .config
 
-        # Shortcut-FE（你的模板已有 CONFIG_FIRMWARE_INCLUDE_SFE=y，保持即可）
-        # 如需确保，可显式写入：
+        # Shortcut-FE
         echo "CONFIG_FIRMWARE_INCLUDE_SFE=y" >> .config
 
         #########################################################################################
