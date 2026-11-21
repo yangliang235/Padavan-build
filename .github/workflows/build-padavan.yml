@@ -1,7 +1,6 @@
-# 源码：fightroad/Padavan-KVR
-# 超频：直接修改内核 PLL (880MHz -> 1000MHz)，不依赖 .config 开关
-# 配置：基于用户提供的 NETGEAR-BZV.config 模板进行功能裁剪
-name: Build Padavan (fightroad-KVR OC Fixed)
+   # 源码基于 keke1023/Padavan
+# 集成：SmartDNS + KVR + CPU超频 + 中文 + USB应用(网上邻居/FTP/打印/USB网卡) + Shortcut-FE
+name: Build Padavan (Full Featured)
 
 on: 
   release:
@@ -14,13 +13,12 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
     - name: Checkout
       uses: actions/checkout@master
-
     - name: Initialization environment
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -29,118 +27,88 @@ jobs:
         sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot \
         cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man \
         pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
-
     - name: Clone source code
       run: |
         git clone --depth=1 https://github.com/keke1023/Padavan.git /opt/rt-n56u
         cd /opt/rt-n56u/toolchain-mipsel
         sh dl_toolchain.sh
         mkdir -p /opt/images/
-
     - name: Build Firmware
       env:
         TNAME: NETGEAR-BZV
       run: |
         cd /opt/rt-n56u/trunk
-
-        ################################################################################################
-        # 关键修复：直接修改内核 PLL，强制 1000MHz
-        # 同时探测 rt2880 和 ralink 两种路径，确保能找到实际文件
-        ################################################################################################
-        PLL_MODIFIED=false
-        for INIT_C in "linux-3.4.x/arch/mips/rt2880/init.c" "linux-3.4.x/arch/mips/ralink/init.c"; do
-          if [ -f "$INIT_C" ]; then
-            echo "Found clock init file: $INIT_C"
-            # 替换各种可能的 0x2B2 写法
-            sed -i 's/reg |= (0x2B2);/reg |= (0x312);/g' "$INIT_C"
-            sed -i 's/reg |= (0x2b2);/reg |= (0x312);/g' "$INIT_C"
-            sed -i 's/!= 0x2B2/!= 0x312/g' "$INIT_C"
-            sed -i 's/!= 0x2b2/!= 0x312/g' "$INIT_C"
-            echo "=== PLL check in $INIT_C ==="
-            grep -n "0x312\|0x2B2\|0x2b2" "$INIT_C" || echo "(no PLL line matched, trying alternative pattern...)"
-            # 备用模式：直接替换 0x2B2 字面值
-            sed -i 's/0x2B2/0x312/g' "$INIT_C"
-            sed -i 's/0x2b2/0x312/g' "$INIT_C"
-            PLL_MODIFIED=true
-            break
-          fi
-        done
-        if [ "$PLL_MODIFIED" = false ]; then
-          echo "ERROR: No clock init file found! OC will NOT work."
+        if [ ! -f configs/templates/$TNAME.config ] ; then
+          echo "configs/templates/$TNAME.config not found "
           exit 1
         fi
-
+        cp -f configs/templates/$TNAME.config .config
         ################################################################################################
-        # 版本号：_KEKE -> 构建日期
+        # 清理模板中的插件配置，避免冲突
         ################################################################################################
-        grep -rl "_KEKE" trunk/ 2>/dev/null | while read file; do
-          sed -i "s/_KEKE/_$(date +%Y%m%d)/g" "$file"
-          echo "Version modified: $file"
-        done
-
+        sed -i '/CONFIG_FIRMWARE_INCLUDE_/d' .config
+        sed -i '/CONFIG_RT_DOT11/d' .config
+        sed -i '/CONFIG_FIRMWARE_ENABLE_USB/d' .config
+        sed -i '/CONFIG_FIRMWARE_ENABLE_UFSD/d' .config
+        sed -i '/CONFIG_FIRMWARE_ENABLE_FAT/d' .config
+        sed -i '/CONFIG_FIRMWARE_ENABLE_EXT4/d' .config
+        sed -i '/CONFIG_FIRMWARE_INCLUDE_SHORTCUT_FE/d' .config
         ################################################################################################
-        # 加载用户提供的配置模板
+        # 核心功能
         ################################################################################################
-        CONFIG_SRC=""
-        if [ -f "configs/templates/$TNAME.config" ]; then
-          CONFIG_SRC="configs/templates/$TNAME.config"
-        elif [ -f "configs/boards/$TNAME/kernel-3.4.x.config" ]; then
-          CONFIG_SRC="configs/boards/$TNAME/kernel-3.4.x.config"
-        fi
-        if [ -z "$CONFIG_SRC" ]; then
-          echo "ERROR: Config template not found."
-          exit 1
-        fi
-        echo "Using config: $CONFIG_SRC"
-        cp -f "$CONFIG_SRC" .config
-
-        ################################################################################################
-        # 功能裁剪（基于你的模板，移除不需要的，保留 KVR/SmartDNS/USB 等）
-        ################################################################################################
-        # --- 显式关闭不需要的插件 ---
-        for opt in SCUTCLIENT GDUT_DRCOM SOFTETHERVPN_SERVER SOFTETHERVPN_CLIENT \
-                   SOFTETHERVPN_CMD DUMP1090 RTL_SDR MENTOHUST FRPC FRPS TUNSAFE \
-                   DROPBEAR DROPBEAR_FAST_CODE WINS SMBD_SYSLOG RPL2TP \
-                   XFS SWAP HID NFSD NFSC CIFS; do
-          echo "CONFIG_FIRMWARE_INCLUDE_${opt}=n" >> .config
-          echo "CONFIG_FIRMWARE_ENABLE_${opt}=n" >> .config
-        done
-
-        # --- 确保关键功能开启（与你的模板一致或按需微调）---
-        # KVR（已通过 5.0.4.0 驱动支持，模板已含 WiFi 驱动版本）
-        echo "CONFIG_FIRMWARE_WIFI_DRIVER=5.0.4.0" >> .config
-        echo "CONFIG_FIRMWARE_KERNEL_CONFIG=\"kernel-3.4.x-5.0.config\"" >> .config
-
         # SmartDNS
         echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=y" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNSBIN=y" >> .config
-
-        # 中文
+        # 中文语言支持
         echo "CONFIG_FIRMWARE_INCLUDE_LANG_CN=y" >> .config
-
-        # USB 与文件系统
+        # KVR (802.11k/v/r)
+        echo "CONFIG_RT_DOT11K_RRM=y" >> .config
+        echo "CONFIG_RT_DOT11V_RRM=y" >> .config
+        echo "CONFIG_RT_DOT11R_FT=y" >> .config
+        # CPU 超频（默认 1000MHz，可改 0x362/0x372/0x3B2）
+        echo "CONFIG_FIRMWARE_INCLUDE_OC=y" >> .config
+        echo 'CONFIG_FIRMWARE_MT7621_OC="0x312"' >> .config # 1000MHz=0x312 / 1100MHz=0x362 / 1120MHz=0x372 / 1200MHz=0x3B2
+        ################################################################################################
+        # USB 基础支持与文件系统
+        ################################################################################################
         echo "CONFIG_FIRMWARE_ENABLE_USB=y" >> .config
-        echo "CONFIG_FIRMWARE_ENABLE_UFSD=y" >> .config
-        echo "CONFIG_FIRMWARE_ENABLE_FAT=y" >> .config
-        echo "CONFIG_FIRMWARE_ENABLE_EXT4=y" >> .config
-
-        # Samba / FTP / 打印
-        echo "CONFIG_FIRMWARE_INCLUDE_SMBD36=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_FTPD=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_LPRD=y" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_U2EC=y" >> .config
-
-        # Shortcut-FE
-        echo "CONFIG_FIRMWARE_INCLUDE_SFE=y" >> .config
-
-        #########################################################################################
-        # 编译
+        echo "CONFIG_FIRMWARE_ENABLE_UFSD=y" >> .config   # NTFS (Paragon驱动)
+        echo "CONFIG_FIRMWARE_ENABLE_FAT=y" >> .config    # FAT/FAT32
+        echo "CONFIG_FIRMWARE_ENABLE_EXT4=y" >> .config   # EXT4
+        ################################################################################################
+        # USB 应用
+        ################################################################################################
+        # 网上邻居 (Samba 3.6)
+        #echo "CONFIG_FIRMWARE_INCLUDE_SMBD36=n" >> .config
+        # FTP 共享
+        #echo "CONFIG_FIRMWARE_INCLUDE_FTPD=n" >> .config
+        # 打印机支持 (LPR守护进程 + USB-over-Ethernet)
+        echo "CONFIG_FIRMWARE_INCLUDE_LPRD=y" >> .config   # LPR printer daemon
+        echo "CONFIG_FIRMWARE_INCLUDE_U2EC=y" >> .config   # USB-over-Ethernet printer daemon
+        # USB 网卡 (USB-over-IP)
+        echo "CONFIG_FIRMWARE_INCLUDE_USBIP=y" >> .config
+        # 其他常用USB模块（按需保留或注释）
+        #echo "CONFIG_FIRMWARE_INCLUDE_SERIAL=n" >> .config # USB-Serial
+        #echo "CONFIG_FIRMWARE_INCLUDE_UVC=n" >> .config    # USB摄像头
+        # echo "CONFIG_FIRMWARE_INCLUDE_AUDIO=n" >> .config  # USB声卡（体积较大）
+        # echo "CONFIG_FIRMWARE_INCLUDE_HID=n" >> .config    # USB-HID
+        ################################################################################################
+        # Shortcut-FE 加速
+        ################################################################################################
+        #echo "CONFIG_FIRMWARE_INCLUDE_SHORTCUT_FE=y" >> .config
+        ################################################################################################
+        # 显式关闭其余所有不需要的插件
+        ################################################################################################
+        for opt in OPENSSL_EXE DNSFORWARDER MENTOHUST SCUTCLIENT SRELAY \
+                   SHADOWSOCKS XRAY V2RAY TROJAN SSOBFS \
+                   ADBYBY ADGUARDHOME ZEROTIER ALIDDNS DDNSTO ALDRIVER SQM; do
+          echo "CONFIG_FIRMWARE_INCLUDE_${opt}=n" >> .config
+        done
         #########################################################################################
         sudo ./clear_tree
         sudo ./build_firmware_modify $TNAME 0
         sudo mv -f images/*.trx /opt/images/
-
-    - name: Upload packages
+    - name : Upload packages
       uses: actions/upload-artifact@master
       if: always()
       with:
