@@ -1,41 +1,3 @@
-# 源码基于 keke1023/Padavan，仅集成 SmartDNS、KVR 与 CPU 超频
-name: Build Padavan (KVR + SmartDNS + OC)
-
-on: 
-  release:
-    types: [published]
-  push:
-    tags:
-    - 'v*'
-  #  branches: 
-  #    - master
-#  schedule:
-#    - cron: 0 8 * * 5
-  watch:
-    types: [started]
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-    if: github.event.repository.owner.id == github.event.sender.id
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@master
-    - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        sudo apt-get update
-        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot \
-        cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man \
-        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
-    - name: Clone source code
-      run: |
-        git clone --depth=1 https://github.com/keke1023/Padavan.git /opt/rt-n56u
-        cd /opt/rt-n56u/toolchain-mipsel
-        sh dl_toolchain.sh
-        mkdir -p /opt/images/
     - name: Build Firmware
       env:
         TNAME: NETGEAR-BZV
@@ -47,41 +9,33 @@ jobs:
         fi
         cp -f configs/templates/$TNAME.config .config
 
-        ################################################################################################
-        # 核心步骤：精确控制 .config，只保留 SmartDNS + KVR + CPU 超频
-        ################################################################################################
-        # 1. 先清理模板中可能存在的所有插件相关配置行，避免冲突
+        # 清理模板中的插件配置，避免冲突
         sed -i '/CONFIG_FIRMWARE_INCLUDE_/d' .config
         sed -i '/CONFIG_RT_DOT11/d' .config
-        sed -i '/CONFIG_WIREGUARD/d' .config
 
-        # 2. SmartDNS
+        # SmartDNS
         echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=y" >> .config
         echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNSBIN=y" >> .config
 
-        # 3. KVR (802.11k/v/r)
+        # 中文语言支持
+        echo "CONFIG_FIRMWARE_INCLUDE_LANG_CN=y" >> .config
+
+        # KVR (802.11k/v/r)
         echo "CONFIG_RT_DOT11K_RRM=y" >> .config
         echo "CONFIG_RT_DOT11V_RRM=y" >> .config
         echo "CONFIG_RT_DOT11R_FT=y" >> .config
 
-        # 4. CPU 超频（默认 1000MHz，按需修改下面一行中的 0x312）
+        # CPU 超频（默认 1000MHz，按需修改下面一行中的 0x312）
         echo "CONFIG_FIRMWARE_INCLUDE_OC=y" >> .config
         echo 'CONFIG_FIRMWARE_MT7621_OC="0x312"' >> .config # 1000MHz=0x312 / 1100MHz=0x362 / 1120MHz=0x372 / 1200MHz=0x3B2
 
-        # 5. 显式关闭其余所有插件
+        # 显式关闭其余所有插件
         for opt in OPENSSL_EXE DNSFORWARDER MENTOHUST SCUTCLIENT SRELAY \
                    SHADOWSOCKS XRAY V2RAY TROJAN SSOBFS \
                    ADBYBY ADGUARDHOME ZEROTIER ALIDDNS DDNSTO ALDRIVER SQM; do
           echo "CONFIG_FIRMWARE_INCLUDE_${opt}=n" >> .config
         done
 
-        #########################################################################################
         sudo ./clear_tree
         sudo ./build_firmware_modify $TNAME 0
         sudo mv -f images/*.trx /opt/images/
-    - name : Upload packages
-      uses: actions/upload-artifact@master
-      if: always()
-      with:
-        name: Padavan-packages
-        path: /opt/images
