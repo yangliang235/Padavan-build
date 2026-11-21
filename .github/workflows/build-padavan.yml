@@ -1,7 +1,7 @@
 # 源码基于 keke1023/Padavan
-# 集成：SmartDNS + KVR + CPU超频(内核级) + 中文 + USB(Samba/FTP/打印/USB网卡) + Shortcut-FE
-# 版本号后缀动态改为当前日期
-name: Build Padavan (Full Featured + OC Fixed + Date Ver)
+# 集成：SmartDNS + KVR + CPU超频(内核级修复) + 中文 + USB(Samba/FTP/打印/USB网卡) + Shortcut-FE
+# 版本号：_KEKE 全局替换为构建日期
+name: Build Padavan (Full Featured + OC/Ver Fixed)
 
 on: 
   release:
@@ -20,6 +20,7 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@master
+
     - name: Initialization environment
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -28,12 +29,14 @@ jobs:
         sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot \
         cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man \
         pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
+
     - name: Clone source code
       run: |
         git clone --depth=1 https://github.com/keke1023/Padavan.git /opt/rt-n56u
         cd /opt/rt-n56u/toolchain-mipsel
         sh dl_toolchain.sh
         mkdir -p /opt/images/
+
     - name: Build Firmware
       env:
         TNAME: NETGEAR-BZV
@@ -45,21 +48,43 @@ jobs:
         fi
 
         ################################################################################################
-        # 修改固件版本号后缀：_KEKE → _当前日期（如 3.4.3.9-099_20261121）
+        # 修复一：强制修改内核 PLL 值 (880MHz -> 1000MHz)
         ################################################################################################
-        sed -i "s/_KEKE/_$(date +%Y%m%d)/g" versions.inc
+        INIT_C="linux-3.4.x/arch/mips/rt2880/init.c"
+        if [ -f "$INIT_C" ]; then
+          sed -i 's/reg |= (0x2B2);/reg |= (0x312);/g' "$INIT_C"
+          sed -i 's/reg |= (0x2b2);/reg |= (0x312);/g' "$INIT_C"
+          sed -i 's/!= 0x2B2/!= 0x312/g' "$INIT_C"
+          sed -i 's/!= 0x2b2/!= 0x312/g' "$INIT_C"
+          echo "=== PLL replacement check in $INIT_C ==="
+          grep -n "0x312\|0x2B2\|0x2b2" "$INIT_C" || echo "(no matching PLL line found)"
+        else
+          echo "WARNING: $INIT_C not found, try alt path..."
+          INIT_C_ALT="linux-3.4.x/arch/mips/ralink/init.c"
+          if [ -f "$INIT_C_ALT" ]; then
+            sed -i 's/reg |= (0x2B2);/reg |= (0x312);/g' "$INIT_C_ALT"
+            sed -i 's/reg |= (0x2b2);/reg |= (0x312);/g' "$INIT_C_ALT"
+            echo "=== PLL replacement check in $INIT_C_ALT ==="
+            grep -n "0x312\|0x2B2\|0x2b2" "$INIT_C_ALT" || echo "(no matching PLL line found)"
+          else
+            echo "ERROR: Neither init.c found, OC will NOT work."
+          fi
+        fi
 
         ################################################################################################
-        # 核心修复：直接修改内核源码，强制 CPU 运行在 1000MHz
-        # 默认 880MHz 对应 0x2B2，1000MHz 对应 0x312
+        # 修复二：全局替换版本号后缀 _KEKE -> _当前日期
         ################################################################################################
-        sed -i 's/reg |= (0x2B2);/reg |= (0x312);/' linux-3.4.x/arch/mips/rt2880/init.c
+        echo "=== Replacing _KEKE globally in trunk/ ==="
+        grep -rl "_KEKE" trunk/ 2>/dev/null | while read file; do
+          sed -i "s/_KEKE/_$(date +%Y%m%d)/g" "$file"
+          echo "Modified: $file"
+        done
 
+        ################################################################################################
+        # 加载模板并清理插件冲突
+        ################################################################################################
         cp -f configs/templates/$TNAME.config .config
 
-        ################################################################################################
-        # 清理模板中的插件配置，避免冲突
-        ################################################################################################
         sed -i '/CONFIG_FIRMWARE_INCLUDE_/d' .config
         sed -i '/CONFIG_RT_DOT11/d' .config
         sed -i '/CONFIG_FIRMWARE_ENABLE_USB/d' .config
@@ -98,13 +123,15 @@ jobs:
         ################################################################################################
         # USB 应用
         ################################################################################################
-        echo "CONFIG_FIRMWARE_INCLUDE_SMBD36=n" >> .config # 网上邻居 (Samba)
+        echo "CONFIG_FIRMWARE_INCLUDE_SMBD36=n" >> .config # 网上邻居 (Samba 3.6)
         echo "CONFIG_FIRMWARE_INCLUDE_FTPD=n" >> .config   # FTP 共享
         echo "CONFIG_FIRMWARE_INCLUDE_LPRD=y" >> .config   # LPR 打印机守护进程
         echo "CONFIG_FIRMWARE_INCLUDE_U2EC=y" >> .config   # USB-over-Ethernet 打印机
         echo "CONFIG_FIRMWARE_INCLUDE_USBIP=y" >> .config  # USB 网卡 (USB-over-IP)
         echo "CONFIG_FIRMWARE_INCLUDE_SERIAL=n" >> .config # USB-Serial
         echo "CONFIG_FIRMWARE_INCLUDE_UVC=n" >> .config    # USB 摄像头
+        # echo "CONFIG_FIRMWARE_INCLUDE_AUDIO=n" >> .config  # USB 声卡（体积较大，按需开启）
+        # echo "CONFIG_FIRMWARE_INCLUDE_HID=n" >> .config    # USB-HID（按需开启）
 
         ################################################################################################
         # Shortcut-FE 加速
@@ -121,10 +148,13 @@ jobs:
         done
 
         #########################################################################################
+        # 编译
+        #########################################################################################
         sudo ./clear_tree
         sudo ./build_firmware_modify $TNAME 0
         sudo mv -f images/*.trx /opt/images/
-    - name : Upload packages
+
+    - name: Upload packages
       uses: actions/upload-artifact@master
       if: always()
       with:
