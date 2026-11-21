@@ -1,5 +1,5 @@
-#修改TNAME: NETGEAR-BZV 中的NETGEAR-BZV为你需要编译的型号，注意名称要与configs/templates/目录下的名字相同
-name: Build Padavan
+# 源码基于 keke1023/Padavan，仅集成 SmartDNS、KVR 与 CPU 超频
+name: Build Padavan (KVR + SmartDNS + OC)
 
 on: 
   release:
@@ -16,7 +16,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
@@ -32,7 +32,7 @@ jobs:
         pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
     - name: Clone source code
       run: |
-        git clone --depth=1 https://github.com/fightroad/Padavan-KVR.git /opt/rt-n56u
+        git clone --depth=1 https://github.com/keke1023/Padavan.git /opt/rt-n56u
         cd /opt/rt-n56u/toolchain-mipsel
         sh dl_toolchain.sh
         mkdir -p /opt/images/
@@ -42,56 +42,39 @@ jobs:
       run: |
         cd /opt/rt-n56u/trunk
         if [ ! -f configs/templates/$TNAME.config ] ; then
-        echo "configs/templates/$TNAME.config not found "
-        exit 1
+          echo "configs/templates/$TNAME.config not found "
+          exit 1
         fi
         cp -f configs/templates/$TNAME.config .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
+
         ################################################################################################
-        #因不同型号配置功能不一样，所以先把配置项删除，如果你自己要添加其他的，也要写上删除这一条，切记！！！
+        # 核心步骤：精确控制 .config，只保留 SmartDNS + KVR + CPU 超频
         ################################################################################################
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=y/CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_MENTOHUST=y/CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=y/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SRELAY=y/CONFIG_FIRMWARE_INCLUDE_SRELAY=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=y/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n/g' .config
-        ######################################################################
-        #以下选项是定义你需要的功能（y=集成,n=忽略），重新写入到.config文件
-        ######################################################################
-        ##科学上网##
-        echo "CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n" >> .config #科学上网插件，选择n后全部有关插件都不集成
-        echo "CONFIG_FIRMWARE_INCLUDE_XRAY=n" >> .config #集成xray执行文件 ~4.5M
-        echo "CONFIG_FIRMWARE_INCLUDE_V2RAY=n" >> .config #集成v2ray执行文件
-        echo "CONFIG_FIRMWARE_INCLUDE_TROJAN=n" >> .config #集成trojan执行文件 ~1.2M
-        echo "CONFIG_FIRMWARE_INCLUDE_SSOBFS=n" >> .config #simple-obfs混淆插件
-        ##科学上网##
+        # 1. 先清理模板中可能存在的所有插件相关配置行，避免冲突
+        sed -i '/CONFIG_FIRMWARE_INCLUDE_/d' .config
+        sed -i '/CONFIG_RT_DOT11/d' .config
+        sed -i '/CONFIG_WIREGUARD/d' .config
 
-        ##广告管理##
-        echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=n" >> .config #adbyby plus+
-        ##DNS服务##
-        echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=y" >> .config #smartdns
-        echo "CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME=y" >> .config #adg DNS去AD
+        # 2. SmartDNS
+        echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNSBIN=y" >> .config
 
+        # 3. KVR (802.11k/v/r)
+        echo "CONFIG_RT_DOT11K_RRM=y" >> .config
+        echo "CONFIG_RT_DOT11V_RRM=y" >> .config
+        echo "CONFIG_RT_DOT11R_FT=y" >> .config
 
-        ##内网穿透服务##
-        echo "CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n" >> .config #zerotier ~1.3M
-        echo "CONFIG_FIRMWARE_INCLUDE_ALIDDNS=n" >> .config #aliddns
-        echo "CONFIG_FIRMWARE_INCLUDE_DDNSTO=n" >> .config #ddnsto ~0.5M
-        echo "CONFIG_FIRMWARE_INCLUDE_WIREGUARD=n" >> .config #wireguard ~10k
-        ##内网穿透服务##
-        echo "CONFIG_FIRMWARE_INCLUDE_ALDRIVER=n" >> .config  #ALDRIVER  ~3m
-        echo "CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n" >> .config #mentohust
-        
-        ##流控QOS##
-        echo "CONFIG_FIRMWARE_INCLUDE_SQM=y" >> .config #SQM QOS#CPU超频
-        echo "CONFIG_FIRMWARE_INCLUDE_OC=n" >> .config #CPU超频开关
-        echo 'CONFIG_FIRMWARE_MT7621_OC="0x312"' >> .config #此处填写对应频率的十六进制：1000Mhz=0x312 1100Mhz=0x362 1120Mhz=0x372 1200Mhz=0x3B2
+        # 4. CPU 超频（默认 1000MHz，按需修改下面一行中的 0x312）
+        echo "CONFIG_FIRMWARE_INCLUDE_OC=y" >> .config
+        echo 'CONFIG_FIRMWARE_MT7621_OC="0x312"' >> .config # 1000MHz=0x312 / 1100MHz=0x362 / 1120MHz=0x372 / 1200MHz=0x3B2
 
-        #########################################################################################
-        #自定义添加其它功能请参考源码configs/templates/目录下的config文件。按照上面的格式添加即可
-        #格式如下：
-        #sed -i '/自定义项/d' .config
-        #echo "自定义项=y" >> .config
+        # 5. 显式关闭其余所有插件
+        for opt in OPENSSL_EXE DNSFORWARDER MENTOHUST SCUTCLIENT SRELAY \
+                   SHADOWSOCKS XRAY V2RAY TROJAN SSOBFS \
+                   ADBYBY ADGUARDHOME ZEROTIER ALIDDNS DDNSTO ALDRIVER SQM; do
+          echo "CONFIG_FIRMWARE_INCLUDE_${opt}=n" >> .config
+        done
+
         #########################################################################################
         sudo ./clear_tree
         sudo ./build_firmware_modify $TNAME 0
