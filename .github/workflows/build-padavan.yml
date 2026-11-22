@@ -1,4 +1,4 @@
-name: Build MT7621 NETGEAR-BZV (vb1980-KVR)
+name: Build MT7621 NETGEAR-BZV (keke1023)
 
 on: 
   repository_dispatch:
