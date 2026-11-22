@@ -34,7 +34,7 @@ jobs:
         sudo rm -rf /opt/rt-n56u
         ln -s /mnt/opt/rt-n56u /opt/rt-n56u
 
-        git clone --depth=1 --single-branch https://github.com/vb1980/Padavan-KVR.git /opt/rt-n56u
+        git clone --depth=1 --single-branch https://github.com/keke1023/Padavan.git /opt/rt-n56u
         sed -i 's/192.168.2/192.168.6/g' /opt/rt-n56u/trunk/user/shared/defaults.h
         sed -i 's/ntp1.aliyun.com/time.pool.aliyun.com/g' /opt/rt-n56u/trunk/user/shared/defaults.h
 
